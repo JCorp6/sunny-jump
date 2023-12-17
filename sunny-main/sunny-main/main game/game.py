@@ -1,5 +1,9 @@
 import pygame
 import sys
+import pygame.mixer
+import math
+
+pygame.mixer.pre_init(frequency=22050, size=-16, channels=2, buffer=4096)
 
 pygame.init()
 pygame.mixer.init()
@@ -10,9 +14,9 @@ HEIGHT = 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Sunny dash")
 
-bg = pygame.transform.scale(
-    pygame.image.load("assets/back.png"), (WIDTH, HEIGHT)
-)
+bg = pygame.transform.scale(pygame.image.load("assets/back.png"), (WIDTH, HEIGHT))
+bg_rect = bg.get_rect()
+
 grass = pygame.image.load("assets/platform.png")
 dirt = pygame.image.load("assets/dirt0000.png")
 
@@ -29,6 +33,11 @@ sign = pygame.transform.scale(
     pygame.image.load("assets/sign.png"), (18 * 2, 20 * 2)
 )
 
+start_game_sound = pygame.mixer.Sound('assets/NEO SKY, NEO MAP! (chiptune arrange).mp3')
+start_game_sound.set_volume(0.4)
+in_game_sound = pygame.mixer.Sound('assets/2 Bit.mp3')
+in_game_sound.set_volume(0.4)
+
 START_MENU = 0
 IN_GAME = 1
 current_state = START_MENU
@@ -42,18 +51,19 @@ class Player(pygame.sprite.Sprite):
         super().__init__()
         self.move_right = False
         self.move_left = False
-        self.jump = False
+        self.jump_count = 2
         self.speed = 10
         self.gravity = 0.5
         self.y_velo = 0
         self.move = False
+        self.scroll = 0
 
         self.right = [
             pygame.transform.scale(
                 pygame.image.load(
                     f"assets/player/idle/player-idle-{index}.png"
                 ),
-                (50, 50),
+                (30, 30),
             )
             for index in range(1, 5)
         ]
@@ -64,14 +74,26 @@ class Player(pygame.sprite.Sprite):
                 pygame.image.load(
                     f"assets/player/run/player-run-{index}.png"
                 ),
-                (50, 50),
+                (30, 30),
             )
             for index in range(1, 6)
         ]
         self.walk_left = [
             pygame.transform.flip(image, True, False) for image in self.walk_right
         ]
-
+        self.jump_right = [
+            pygame.transform.scale(
+                pygame.image.load(
+                    f"assets/player/jump/player-jump-{index}.png"
+                ),
+                (30, 30),
+            )
+            for index in range(1, 3)
+        ]
+        self.jump_left = [
+            pygame.transform.flip(image, True, False) for image in self.jump_right
+        ]
+        
         self.frame = 0
         self.idle = self.right[self.frame]
         self.walk_idle = self.walk_right[self.frame]
@@ -83,14 +105,17 @@ class Player(pygame.sprite.Sprite):
         self.direction = 1
 
     def update(self):
+        scroll = 0
         self.dx = 0
         self.dy = 0
 
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_w] and not self.jump:
+        keys = pygame.key.get_pressed() 
+         
+        if keys[pygame.K_w] and self.jump_count > 0:
             self.y_velo = -15
             self.jump = True
             self.move = True
+            self.jump_count -= 1
         if not keys[pygame.K_w]:
             self.jump = False
             self.move = True
@@ -108,7 +133,7 @@ class Player(pygame.sprite.Sprite):
                 self.walk_idle = self.walk_right[int(self.frame)]
             if self.direction == -1:
                 self.walk_idle = self.walk_left[int(self.frame)]
-
+                
         if self.move is False:
             self.frame += 0.2
             if self.frame >= len(self.right):
@@ -126,6 +151,18 @@ class Player(pygame.sprite.Sprite):
                 self.idle = self.walk_right[int(self.frame)]
             if self.direction == -1:
                 self.idle = self.walk_left[int(self.frame)]
+                                
+        if self.jump == True:
+            if self.direction == 1:
+                self.idle = self.jump_right[0]
+            if self.direction == -1:
+                self.idle = self.jump_left[0]
+                
+        if self.jump == False and self.jump_count < 2:
+            if self.direction == 1:
+                self.idle = self.jump_right[1]
+            if self.direction == -1:
+                self.idle = self.jump_left[1]
 
         self.y_velo += 1
         if self.y_velo > 10:
@@ -147,9 +184,14 @@ class Player(pygame.sprite.Sprite):
                 elif self.y_velo >= 0:
                     self.dy = tile[1].top - self.rect.bottom
                     self.y_velo = 0
+                    self.jump_count = 2
 
-        self.rect.x += self.dx
+        self.rect.x += self.dx - self.scroll
         self.rect.y += self.dy
+                
+        # if self.rect.right > WIDTH - scroll_tresh or self.rect.left < scroll_tresh:
+        #     self.rect.x -= self.dx
+        #     scroll = -self.dx
 
         if self.rect.colliderect(enemy.enemy_rect):
             if self.rect.right - enemy.enemy_rect.left < 10 or self.rect.left - enemy.enemy_rect.right < 10:
@@ -166,6 +208,8 @@ class Player(pygame.sprite.Sprite):
         if self.rect.bottom > HEIGHT:
             self.rect.bottom = HEIGHT
             self.dy = 0
+            
+        # return scroll
 
 class Enemy:
     def __init__(self):
@@ -206,20 +250,28 @@ class Enemy:
 class Platform:
     def __init__(self):
         self.tile_list = []
-        self.tile_size = 50
+        self.tile_size = 30
         self.map = [
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 2, 2],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
-            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2],
-            [2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2],
-            [2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2],
-            [2, 2, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2],
-            [2, 2, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
-            [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+            [1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1],
+            [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+            [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+            [1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0, 0, 0, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+            [1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+            [1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         ]
 
         self.draw_platforms()
@@ -227,7 +279,7 @@ class Platform:
     def draw_platforms(self):
         for row_index, row in enumerate(self.map):
             for col_index, tile in enumerate(row):
-                if tile == 1:
+                if tile == 2:
                     img = pygame.transform.scale(
                         grass, (self.tile_size, self.tile_size)
                     )
@@ -235,7 +287,7 @@ class Platform:
                         topleft=(col_index * self.tile_size, row_index * self.tile_size)
                     )
                     self.tile_list.append((img, img_rect))
-                if tile == 2:
+                if tile == 1:
                     img = pygame.transform.scale(dirt, (self.tile_size, self.tile_size))
                     img_rect = img.get_rect(
                         topleft=(col_index * self.tile_size, row_index * self.tile_size)
@@ -289,9 +341,6 @@ player = Player()
 enemy = Enemy()
 coin = Coin()
 
-
-pygame.mixer.music.load('assets/2 Bit.mp3')
-pygame.mixer.music.play(-1)
 font = pygame.font.Font('assets/PixelifySans-Regular.ttf', 30)
 text = font.render(f'Score = {koin}', None, (255, 255, 255), None)
 
@@ -302,21 +351,33 @@ while True:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_RETURN and current_state == START_MENU:
                 current_state = IN_GAME
+                start_game_sound.stop()
 
     screen.fill((234, 56, 70))
-    screen.blit(bg, (0, 0))
+    bg_rect.x -= 1
+    screen.blit(bg, (bg_rect.x, 0))
+    
+    if bg_rect.x + bg_rect.width <= WIDTH:
+        screen.blit(bg, (bg_rect.right, 0))
+
+    if bg_rect.x <= -bg_rect.width:
+        bg_rect.x = 0
 
     if current_state == START_MENU:
         start_text = font.render('Press Enter to Start', None, (255, 255, 255), None)
         start_rect = start_text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
         screen.blit(start_text, start_rect)
+        start_game_sound.play()
 
     elif current_state == IN_GAME:
         player.update()
         platform.draw()
         enemy.update()
         coin.update()
+       
         screen.blit(player.idle, player.rect)
+
+        in_game_sound.play(-1)
 
         coins_to_remove = [] 
         for i, coin_rect in enumerate(coin.coin_rect_list):
